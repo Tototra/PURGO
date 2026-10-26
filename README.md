@@ -25,7 +25,7 @@ Les versions de développement sont aussi disponibles comme artefacts dans l'ong
 
 **Analyse intelligente** : un clic lance le nettoyage, la sécurité et le démarrage, puis « Nettoyer et protéger ».
 
-![Analyse en cours](docs/analyse-en-cours.png)
+![Fin d'analyse : le tambour s'arrête, les éléments trouvés sont dedans](docs/analyse.png)
 
 | Section | Modules |
 | --- | --- |
@@ -43,7 +43,7 @@ Les versions de développement sont aussi disponibles comme artefacts dans l'ong
 - nettoyer les caches chaque semaine (désactivé par défaut) ;
 - se lancer au démarrage.
 
-![Moniteur](docs/moniteur.png)
+![Nettoyage système](docs/nettoyage.png)
 
 ## Compiler soi-même
 
@@ -66,7 +66,7 @@ npm run build    # produit les installeurs dans src-tauri/target/release/bundle
 
 ```
 ui/              interface (HTML, CSS, JavaScript sans framework)
-  js/orb.js      l'orbe liquide animée (canvas)
+  js/drum.js     le hublot animé (canvas) : tambour, eau, fichiers qui culbutent
   js/m-*.js      les modules
 src-tauri/src/   cœur en Rust, un fichier par domaine
   util.rs        chemins, tailles, Corbeille, droits administrateur pour chaque OS
@@ -75,4 +75,4 @@ src-tauri/src/   cœur en Rust, un fichier par domaine
 macos-native/    première version de Purgo, en SwiftUI, réservée à macOS
 ```
 
-Polices : [Unbounded](https://github.com/googlefonts/unbounded) et [Manrope](https://github.com/sharanda/manrope), sous licence SIL Open Font License (voir `ui/fonts`).
+Polices : [Bricolage Grotesque](https://github.com/ateliertriay/bricolage) et [Doto](https://github.com/oliverlalan/Doto), sous licence SIL Open Font License (voir `ui/fonts`).

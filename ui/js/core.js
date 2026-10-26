@@ -1,4 +1,4 @@
-import { LiquidOrb } from './orb.js';
+import { Drum } from './drum.js';
 // Purgo UI core: Tauri bridge, formatting, DOM helpers, icons and animated components.
 
 const T = window.__TAURI__;
@@ -76,6 +76,8 @@ export const frag = (...k) => { const f = document.createDocumentFragment(); for
 
 const P = {
   sparkles: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z M19 3v4 M17 5h4 M5 17v4 M3 19h4',
+  drum: 'M4 3h16v18H4z M12 18a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M8.5 14c1.2-.8 2.3-.8 3.5 0s2.3.8 3.5 0 M7 5.5h2 M15 5.5h2',
+  play: 'M8 5l11 7-11 7z',
   trash: 'M3 6h18 M8 6V4h8v2 M6 6l1 14h10l1-14 M10 11v6 M14 11v6',
   lock: 'M6 11h12v10H6z M8 11V8a4 4 0 0 1 8 0v3',
   shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z M9 12l2 2 4-4',
@@ -126,7 +128,7 @@ export function icon(name, size = 18, extra = '') {
   s.setAttribute('width', size); s.setAttribute('height', size);
   s.setAttribute('class', 'ic ' + extra);
   const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  p.setAttribute('d', P[name] || P.sparkles);
+  p.setAttribute('d', P[name] || P.box);
   s.append(p);
   return s;
 }
@@ -149,32 +151,32 @@ export function countUp(el, to, { duration = 700, format = bytes } = {}) {
 
 // ------------------------------------------------------------------ the orb
 
-export const currentTint = () => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim() || '#8a5cff';
+export const currentTint = () => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim() || '#2c6bed';
 
-/** The liquid orb. phase: idle | scanning | cleaning | done */
+/** The porthole + its dot-matrix display. phase: idle | scanning | cleaning | done */
 export function orb({ phase = 'idle', size = 240, onClick, content } = {}) {
-  const lo = new LiquidOrb(size, currentTint());
-  lo.reduce = !!app.settings.reduce_motion;
-  const center = h('div.orb-content');
-  const el = h('div.orb', {
-    style: { '--size': `${size}px` },
+  const d = new Drum(size, currentTint());
+  d.reduce = !!app.settings.reduce_motion;
+  const display = h('div.display');
+  const port = h('div.porthole', {
     onclick: (e) => {
       if (!onClick || !el.classList.contains('idle')) return;
-      const r = el.getBoundingClientRect();
+      const r = port.getBoundingClientRect();
       if (Math.hypot(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2) > size / 2) return;
-      lo.pulse();
-      setTimeout(onClick, 160);
+      d.pulse();
+      setTimeout(onClick, 180);
     },
-    onpointerenter: () => (lo.hover = 1),
-    onpointerleave: () => (lo.hover = 0),
-  }, lo.canvas, center);
-  el.lo = lo;
+    onpointerenter: () => (d.hover = 1),
+    onpointerleave: () => (d.hover = 0),
+  }, d.canvas);
+  const el = h('div.orb', { style: { '--size': `${size}px` } }, port, display);
+  el.lo = d;
   el.set = (p, c) => {
     el.classList.remove('idle', 'scanning', 'cleaning', 'done');
     el.classList.add(p);
     el.classList.toggle('clickable', !!onClick && p === 'idle');
-    lo.setPhase(p);
-    if (c !== undefined) center.replaceChildren(...[c].flat().filter(Boolean));
+    d.setPhase(p);
+    if (c !== undefined) display.replaceChildren(...[c].flat().filter(Boolean));
   };
   el.set(phase, content);
   return el;
@@ -240,9 +242,9 @@ export function button(label, onClick, { kind = '', disabled = false, icon: ic, 
 export function empty({ icon: ic, title, message, action, onAction }) {
   const e = h('div.empty');
   if (action && onAction) {
-    e.append(orb({ size: 220, onClick: onAction, content: [icon(ic, 40), h('b', action)] }));
+    e.append(orb({ size: 230, onClick: onAction, content: [icon('play', 15), h('b', action)] }));
   } else if (ic === 'check') {
-    e.append(orb({ phase: 'done', size: 170, content: icon('check', 52, 'bold') }));
+    e.append(orb({ phase: 'done', size: 180, content: [icon('check', 16, 'bold'), h('b', 'Propre')] }));
   } else {
     e.append(h('div.empty-ic', icon(ic, 44)));
   }
@@ -255,7 +257,7 @@ export function scanning(text, { cleaning = false, showBytes = true, label } = {
   const num = h('b.count', bytes(0));
   num.dataset.v = 0;
   const o = orb({ phase: cleaning ? 'cleaning' : 'scanning', size: 240,
-    content: showBytes ? [num, h('small', label || (cleaning ? 'nettoyés' : 'trouvés'))] : icon(cleaning ? 'sparkles' : 'search', 42, 'pulse') });
+    content: showBytes ? [num, h('small', label || (cleaning ? 'nettoyés' : 'trouvés'))] : [h('span.blink'), h('b', cleaning ? 'Essorage' : 'Lavage en cours')] });
   const tk = ticker();
   const title = h('h2', text);
   const el = h('div.scanning', o, title, tk);
@@ -270,7 +272,7 @@ export function scanning(text, { cleaning = false, showBytes = true, label } = {
       }
       if (showBytes && b != null) countUp(num, b, { duration: 500 });
     },
-    finish: (msg) => { o.set('done', icon('check', 46, 'bold draw')); title.textContent = msg || 'Terminé'; tk.set(''); },
+    finish: (msg) => { o.set('done', [icon('check', 16, 'bold'), h('b', 'Terminé')]); title.textContent = msg || 'Terminé'; tk.set(''); },
   };
 }
 
@@ -326,7 +328,7 @@ const ICON_MAP = { internaldrive: 'disk', 'doc.text': 'file', shippingbox: 'box'
   'arrow.clockwise': 'refresh', 'trash.circle': 'trash', 'arrow.down.app': 'download', 'arrow.triangle.2.circlepath': 'refresh', 'square.grid.2x2': 'copy',
   textformat: 'file', photo: 'eye', 'trash.slash': 'trash', 'moon.zzz': 'moon', archivebox: 'box', icloud: 'cloud', bolt: 'bolt', waveform: 'wave', mug: 'box',
   cup: 'box', hexagon: 'hexagon', 'chevron.left.forwardslash.chevron.right': 'code' };
-export const mapIcon = (n) => ICON_MAP[n] || (P[n] ? n : 'sparkles');
+export const mapIcon = (n) => ICON_MAP[n] || (P[n] ? n : 'box');
 
 // ------------------------------------------------------------------ dialogs & toasts
 
@@ -373,3 +375,18 @@ export function trashSummary(r) {
 }
 
 export const trashName = () => (app.os === 'windows' ? 'Corbeille' : 'Corbeille');
+
+/** Purgo's mark: a porthole with a water line. */
+export function logo(size = 30) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(ns, 'svg');
+  s.setAttribute('viewBox', '0 0 32 32');
+  s.setAttribute('width', size);
+  s.setAttribute('height', size);
+  s.setAttribute('class', 'logo-mark');
+  s.innerHTML = '<circle cx="16" cy="16" r="15" fill="#e6e9ec"/><circle cx="16" cy="16" r="11.5" fill="#1a1e23"/>'
+    + '<clipPath id="lg"><circle cx="16" cy="16" r="9.5"/></clipPath><g clip-path="url(#lg)"><rect x="4" y="4" width="24" height="24" fill="#3b434c"/>'
+    + '<path d="M4 18.5c2-1.6 4-1.6 6 0s4 1.6 6 0 4-1.6 6 0 4 1.6 6 0V28H4z" fill="#2c6bed"/></g>'
+    + '<path d="M8.6 10.2a9 9 0 0 1 4.4-3.4" stroke="#fff" stroke-opacity=".5" stroke-width="1.6" fill="none" stroke-linecap="round"/>';
+  return s;
+}

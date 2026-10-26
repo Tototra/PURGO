@@ -1,4 +1,4 @@
-import { app, h, icon, invoke, bytes, button, toast } from './core.js';
+import { app, h, icon, invoke, bytes, button, toast, logo } from './core.js';
 import { toggle } from './kit.js';
 import { installFx, moveNavIndicator, stagger } from './fx.js';
 import * as clean from './m-clean.js';
@@ -74,7 +74,7 @@ async function openSettings() {
 }
 
 async function start() {
-  document.getElementById('logo').append(icon('sparkles', 18));
+  document.getElementById('logo').append(logo(32));
   try {
     const p = await invoke('platform_info');
     Object.assign(app, p);

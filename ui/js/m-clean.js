@@ -105,7 +105,7 @@ security.view = () => {
 
 const S = { phase: 'idle', steps: {}, cards: 0, freed: 0, cleaned: false, line: null };
 
-export const smart = { id: 'smart', title: 'Analyse intelligente', icon: 'sparkles', tint: '#5b54f5', st: S };
+export const smart = { id: 'smart', title: 'Analyse intelligente', icon: 'drum', tint: '#2c6bed', st: S };
 
 let statsTimer = null;
 smart.onShow = () => {
@@ -174,12 +174,12 @@ smart.view = () => {
   S.count = h('b.count', bytes(prevCount));
   S.count.dataset.v = prevCount;
   let content;
-  if (S.phase === 'idle') content = [icon('sparkles', 44, 'pulse'), h('b', 'Analyser')];
+  if (S.phase === 'idle') content = [icon('play', 16), h('b', 'Démarrer l\'analyse')];
   else if (S.phase === 'scanning') content = [S.count, h('small', 'à libérer')];
   else if (S.phase === 'cleaning') content = [S.count, h('small', 'nettoyés')];
   else {
     const n = h('b', bytes(0));
-    content = [icon('check', 44, 'bold draw'), n];
+    content = [icon('check', 18, 'bold'), n];
     setTimeout(() => countUp(n, S.cleaned ? S.freed : junkSel, { duration: 1200 }), 50);
   }
   if (!S.orb) S.orb = orb({ size: 280, onClick: runSmart });
@@ -213,7 +213,7 @@ smart.view = () => {
       card(security, threats ? String(threats) : 'Aucune', threats ? 'menace(s) ou élément(s) suspect(s)' : 'menace détectée', 0.3),
       card({ id: 'startup', title: 'Démarrage', icon: 'power', tint: '#e8890c' }, String(enabled), 'éléments lancés automatiquement', 0.45)));
     kids.push(h('div', { style: { display: 'flex', gap: '10px' } }, button('Nouvelle analyse', runSmart),
-      !S.cleaned ? button('Nettoyer et protéger', cleanSmart, { kind: 'primary', icon: 'sparkles', disabled: !junkSel && !threats }) : null));
+      !S.cleaned ? button('Nettoyer et protéger', cleanSmart, { kind: 'primary', disabled: !junkSel && !threats }) : null));
   }
 
   if (S.phase === 'idle') {
