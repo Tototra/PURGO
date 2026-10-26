@@ -1,0 +1,14 @@
+{
+  "name": "purgo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Purgo : nettoyage, optimisation et outils développeurs pour Windows, Linux et macOS",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
