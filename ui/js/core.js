@@ -154,22 +154,29 @@ export function countUp(el, to, { duration = 700, format = bytes } = {}) {
 export const currentTint = () => getComputedStyle(document.documentElement).getPropertyValue('--tint').trim() || '#2c6bed';
 
 /** The porthole + its dot-matrix display. phase: idle | scanning | cleaning | done */
-export function orb({ phase = 'idle', size = 240, onClick, content } = {}) {
-  const d = new Drum(size, currentTint());
+export function orb({ phase = 'idle', size = 240, onClick, content, machine = false } = {}) {
+  const d = new Drum(size, currentTint(), { machine });
   d.reduce = !!app.settings.reduce_motion;
   const display = h('div.display');
   const port = h('div.porthole', {
     onclick: (e) => {
       if (!onClick || !el.classList.contains('idle')) return;
       const r = port.getBoundingClientRect();
-      if (Math.hypot(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2) > size / 2) return;
+      if (!machine && Math.hypot(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2) > size / 2) return;
       d.pulse();
       setTimeout(onClick, 180);
     },
     onpointerenter: () => (d.hover = 1),
     onpointerleave: () => (d.hover = 0),
   }, d.canvas);
-  const el = h('div.orb', { style: { '--size': `${size}px` } }, port, display);
+  if (machine) {
+    // the display lives in the machine's control panel
+    const m = d.layout();
+    const w = m.x1 - m.x0, bh = m.pb - m.y0;
+    Object.assign(display.style, { position: 'absolute', left: `${m.x0 + w * 0.57}px`, width: `${w * 0.43 - 16}px`, top: `${m.y0 + bh * 0.2}px`, height: `${bh * 0.6}px` });
+    port.append(display);
+  }
+  const el = h('div.orb', { class: machine ? 'machine' : '', style: { '--size': `${machine ? d.mw : size}px`, '--h': `${d.mh}px` } }, port, machine ? null : display);
   el.lo = d;
   el.set = (p, c) => {
     el.classList.remove('idle', 'scanning', 'cleaning', 'done');

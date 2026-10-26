@@ -6,13 +6,26 @@ const TAU = Math.PI * 2;
 const CHIP_COLORS = ['#2c6bed', '#f2b705', '#27a567', '#e5484d', '#8e5cd9', '#f07c2a', '#14a3b8'];
 
 export class Drum {
-  constructor(size, tint = '#2c6bed') {
-    this.size = size;
+  constructor(size, tint = '#2c6bed', opts = {}) {
+    this.machine = !!opts.machine;
+    if (this.machine) {
+      // size = machine width; the porthole sits under the control panel
+      this.mw = size;
+      this.mh = Math.round(size * 1.18);
+      const m = this.layout();
+      this.size = Math.floor(Math.min((m.x1 - m.x0) * 0.8, (m.y1 - m.pb) * 0.9));
+    } else {
+      this.size = this.mw = this.mh = size;
+    }
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'drum-canvas';
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = this.canvas.height = size * this.dpr;
-    this.canvas.style.width = this.canvas.style.height = `${size}px`;
+    this.canvas.width = this.mw * this.dpr;
+    this.canvas.height = this.mh * this.dpr;
+    this.canvas.style.width = `${this.mw}px`;
+    this.canvas.style.height = `${this.mh}px`;
+    this.dial = -0.9;
+    this.vib = { x: 0, y: 0, r: 0 };
     this.ctx = this.canvas.getContext('2d');
     this.phase = 'idle';
     this.angle = 0;
@@ -32,6 +45,17 @@ export class Drum {
     this.last = performance.now();
     this.frame = this.frame.bind(this);
     requestAnimationFrame(this.frame);
+  }
+
+  layout() {
+    const x0 = 4, x1 = this.mw - 4, y0 = 6, y1 = this.mh - 16;
+    return { x0, x1, y0, y1, pb: y0 + (y1 - y0) * 0.19 };
+  }
+
+  center() {
+    if (!this.machine) return [this.size / 2, this.size / 2];
+    const m = this.layout();
+    return [this.mw / 2, m.pb + (m.y1 - m.pb) / 2];
   }
 
   get R() { return this.size / 2 - 4; }
@@ -103,6 +127,16 @@ export class Drum {
     this.settle *= Math.pow(0.04, dt);
     this.shake *= Math.pow(0.002, dt);
     this.t += dt;
+    if (this.machine) {
+      const dialTarget = { idle: -0.9, scanning: -0.9 + ((this.t * 0.9) % 2.6), cleaning: 1.9, done: 0.5 }[p];
+      this.dial += (dialTarget - this.dial) * Math.min(1, dt * 6);
+      const amp = (p === 'cleaning' ? Math.min(3.2, this.omega * 0.32) : p === 'scanning' ? 0.9 : 0) * k + this.shake * 2 + this.settle * 4;
+      this.vib.x = Math.sin(this.t * 53) * amp + Math.sin(this.t * 7.3) * amp * 0.5;
+      this.vib.y = Math.abs(Math.sin(this.t * 41)) * -amp * 0.7;
+      this.vib.r = p === 'cleaning' ? Math.sin(this.t * 4.1) * amp * 0.35 : Math.sin(this.t * 9) * this.settle * 2;
+      const host = this.canvas.parentElement;
+      if (host) host.style.transform = `translate(${this.vib.x.toFixed(2)}px, ${this.vib.y.toFixed(2)}px) rotate(${this.vib.r.toFixed(3)}deg)`;
+    }
 
     const g = 900 * (this.size / 300);
     const waterY = G - this.level * G * 2;
@@ -150,11 +184,72 @@ export class Drum {
     this.bubbles = this.bubbles.filter((b) => b.life > 0 && b.y > -G);
   }
 
+  drawMachine(c) {
+    const { x0, x1, y0, y1, pb } = this.layout();
+    const w = x1 - x0, p = this.phase;
+    // floor shadow & feet
+    c.fillStyle = 'rgba(21,25,29,0.10)';
+    c.beginPath(); c.ellipse(this.mw / 2, y1 + 9, w * 0.46, 6, 0, 0, TAU); c.fill();
+    c.fillStyle = '#2a3037';
+    roundRect(c, x0 + 16, y1 - 4, 26, 12, 3); c.fill();
+    roundRect(c, x1 - 42, y1 - 4, 26, 12, 3); c.fill();
+    // body
+    c.fillStyle = '#f7f8f9';
+    roundRect(c, x0, y0, w, y1 - y0, 20); c.fill();
+    c.lineWidth = 2; c.strokeStyle = '#c3c9cf'; c.stroke();
+    // control panel band
+    c.save();
+    roundRect(c, x0, y0, w, y1 - y0, 20); c.clip();
+    c.fillStyle = '#e3e7ea';
+    c.fillRect(x0, y0, w, pb - y0);
+    c.fillStyle = '#c3c9cf';
+    c.fillRect(x0, pb - 1, w, 2);
+    // kick plate
+    c.fillStyle = '#eceff1';
+    c.fillRect(x0, y1 - (y1 - y0) * 0.07, w, (y1 - y0) * 0.07);
+    c.fillStyle = '#d5dade';
+    c.fillRect(x0, y1 - (y1 - y0) * 0.07, w, 1.5);
+    c.restore();
+    // detergent drawer
+    const bh = pb - y0;
+    c.fillStyle = '#d3d9de';
+    roundRect(c, x0 + 14, y0 + bh * 0.22, w * 0.27, bh * 0.44, 6); c.fill();
+    c.fillStyle = '#b4bcc4';
+    roundRect(c, x0 + 14 + w * 0.06, y0 + bh * 0.38, w * 0.15, bh * 0.1, 3); c.fill();
+    // program LEDs
+    for (let i = 0; i < 5; i++) {
+      let on;
+      if (p === 'scanning') on = Math.floor(this.t * 5) % 5 === i;
+      else if (p === 'cleaning') on = Math.floor(this.t * 6) % 2 === 0;
+      else if (p === 'done') on = true;
+      else on = i === 0;
+      c.fillStyle = on ? (p === 'done' ? '#1f9d5b' : '#ffb000') : '#c3c9cf';
+      c.beginPath(); c.arc(x0 + 20 + i * 11, y0 + bh * 0.82, 3, 0, TAU); c.fill();
+    }
+    // program dial
+    const dx = x0 + w * 0.43, dy = y0 + bh * 0.5, dr = bh * 0.33;
+    c.strokeStyle = '#9aa3ab'; c.lineWidth = 1.5;
+    for (let i = 0; i < 12; i++) {
+      const a = -Math.PI * 1.25 + (i / 11) * Math.PI * 1.5;
+      c.beginPath();
+      c.moveTo(dx + Math.cos(a) * (dr + 4), dy + Math.sin(a) * (dr + 4));
+      c.lineTo(dx + Math.cos(a) * (dr + 8), dy + Math.sin(a) * (dr + 8));
+      c.stroke();
+    }
+    c.fillStyle = '#c3c9cf'; c.beginPath(); c.arc(dx, dy, dr, 0, TAU); c.fill();
+    c.fillStyle = '#f2f4f6'; c.beginPath(); c.arc(dx, dy, dr - 4, 0, TAU); c.fill();
+    c.strokeStyle = '#15191d'; c.lineWidth = 3; c.lineCap = 'round';
+    const da = this.dial - Math.PI / 2;
+    c.beginPath(); c.moveTo(dx + Math.cos(da) * dr * 0.2, dy + Math.sin(da) * dr * 0.2); c.lineTo(dx + Math.cos(da) * (dr - 7), dy + Math.sin(da) * (dr - 7)); c.stroke();
+  }
+
   draw() {
-    const c = this.ctx, S = this.size, R = this.R, G = this.G;
-    const cx = S / 2 + Math.sin(this.t * 60) * this.shake * 3, cy = S / 2;
+    const c = this.ctx, R = this.R, G = this.G;
+    let [cx, cy] = this.center();
+    if (!this.machine) cx += Math.sin(this.t * 60) * this.shake * 3;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    c.clearRect(0, 0, S, S);
+    c.clearRect(0, 0, this.mw, this.mh);
+    if (this.machine) this.drawMachine(c);
 
     const ring = (r, color) => { c.fillStyle = color; c.beginPath(); c.arc(cx, cy, r, 0, TAU); c.fill(); };
     ring(R, '#c3c9cf');

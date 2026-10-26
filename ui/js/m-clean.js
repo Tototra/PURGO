@@ -1,6 +1,7 @@
 import { app, h, icon, invoke, bytes, pct, orb, ticker, countUp, onProgress, header, notice, empty, button, badge, checkbox, revealBtn,
   confirmDialog, toast, trashItems, trashSummary, ring, mapIcon, tilde } from './core.js';
 import { categoryModule, rerender, runScan, runClean } from './kit.js';
+import { reviewDelete, deleteSummary, trashRun } from './deleter.js';
 
 // ------------------------------------------------------------------ system junk
 
@@ -58,17 +59,15 @@ security.scan = async () => {
   security.st.report = r || { threats: [] };
   rerender(security);
 };
-security.remove = async (silent = false) => {
-  const sel = security.st.report.threats.filter((t) => t.selected);
+security.remove = async () => {
+  const sel = security.st.report.threats.filter((t) => t.selected).map((t) => ({ ...t, group: t.detail.split(' · ').pop() }));
   if (!sel.length) return;
-  if (!silent) {
-    const ok = await confirmDialog(`Supprimer ${sel.length} élément(s) ?`, 'Les fichiers vont dans la Corbeille, les entrées de démarrage et les tâches planifiées sont retirées.', [{ label: 'Supprimer', kind: 'danger' }]);
-    if (!ok) return;
-  }
-  const [ok, errs] = await runClean(security, 'Neutralisation…', () => invoke('remove_threats', { items: sel }));
-  security.st.result = `${ok} élément(s) neutralisé(s)` + (errs.length ? ` · ${errs.length} à traiter à la main` : '');
-  if (errs.length) toast(errs[0], 'err');
-  await security.scan();
+  const r = await reviewDelete({ title: 'Neutraliser les menaces', items: sel, run: threatRun, mode: 'remove',
+    note: 'Les fichiers vont dans la Corbeille ; les entrées de démarrage et les tâches planifiées sont retirées.' });
+  if (!r) return;
+  security.st.result = deleteSummary(r);
+  security.st.report.threats = security.st.report.threats.filter((t) => !r.doneIds.has(t.id));
+  rerender(security);
 };
 security.view = () => {
   const st = security.st;
@@ -135,31 +134,33 @@ async function runSmart() {
   rerender(smart);
 }
 
+const threatRun = async (t) => {
+  const [ok, errs] = await invoke('remove_threats', { items: [t] });
+  return { freed: 0, error: ok ? null : (errs[0] || 'Impossible à retirer') };
+};
+
 async function cleanSmart() {
-  S.phase = 'cleaning';
-  S.count = null;
-  rerender(smart);
+  const junkItems = (junk.st.cats || []).flatMap((c) => c.items.filter((i) => i.selected).map((i) => ({ ...i, group: c.name, kind: 'file' })));
+  const threats = (security.st.report?.threats || []).filter((t) => t.selected).map((t) => ({ ...t, group: 'Menaces', kind: 'threat' }));
   const before = (await invoke('system_stats')).disk_free;
-  const sel = (junk.st.cats || []).flatMap((c) => c.items.filter((i) => i.selected));
-  let freed = 0;
-  // in batches so the counter climbs
-  for (let i = 0; i < sel.length; i += 6) {
-    const batch = sel.slice(i, i + 6);
-    S.tick?.set(batch[batch.length - 1].paths[0]);
-    for (const it of batch) S.orb?.lo.feed(it.paths[0]);
-    const r = await trashItems(batch);
-    freed += r.freed;
-    countUp(S.count, freed, { duration: 400 });
-  }
-  const done = new Set(sel.map((i) => i.id));
-  for (const c of junk.st.cats || []) c.items = c.items.filter((i) => !done.has(i.id));
+  let freedLive = 0;
+  const r = await reviewDelete({
+    title: 'Nettoyer et protéger',
+    subtitle: 'Voici tout ce que Purgo va retirer. Décoche ce que tu veux garder.',
+    items: [...threats, ...junkItems],
+    note: 'Réduis cette fenêtre pour voir la machine essorer.',
+    run: (i) => (i.kind === 'threat' ? threatRun(i) : trashRun(i)),
+    onStart: () => { S.phase = 'cleaning'; S.count = null; rerender(smart); },
+    onItem: (i, freed) => { freedLive = freed; S.orb?.lo.feed(i.name); S.tick?.set(i.paths?.[0] || i.name); if (S.count) countUp(S.count, freed, { duration: 350 }); },
+  });
+  if (!r) { if (S.phase === 'cleaning') { S.phase = 'done'; rerender(smart); } return; }
+  for (const c of junk.st.cats || []) c.items = c.items.filter((i) => !r.doneIds.has(i.id));
   junk.st.cats = (junk.st.cats || []).filter((c) => c.items.length);
-  const threats = (security.st.report?.threats || []).filter((t) => t.selected);
-  if (threats.length) await invoke('remove_threats', { items: threats }).catch(() => {});
+  if (security.st.report) security.st.report.threats = security.st.report.threats.filter((t) => !r.doneIds.has(t.id));
   const after = (await invoke('system_stats')).disk_free;
-  S.freed = Math.max(freed, after - before);
+  S.freed = Math.max(r.freed || freedLive, after - before);
   S.cleaned = true;
-  S.line = `${bytes(freed)} déplacés dans la Corbeille` + (threats.length ? ` · ${threats.length} menace(s) neutralisée(s)` : '');
+  S.line = deleteSummary(r);
   S.phase = 'done';
   rerender(smart);
 }
@@ -174,15 +175,15 @@ smart.view = () => {
   S.count = h('b.count', bytes(prevCount));
   S.count.dataset.v = prevCount;
   let content;
-  if (S.phase === 'idle') content = [icon('play', 16), h('b', 'Démarrer l\'analyse')];
-  else if (S.phase === 'scanning') content = [S.count, h('small', 'à libérer')];
-  else if (S.phase === 'cleaning') content = [S.count, h('small', 'nettoyés')];
+  if (S.phase === 'idle') content = [icon('play', 13), h('b', 'Départ')];
+  else if (S.phase === 'scanning') content = [h('span.blink'), S.count];
+  else if (S.phase === 'cleaning') content = [h('span.blink'), S.count];
   else {
     const n = h('b', bytes(0));
     content = [icon('check', 18, 'bold'), n];
     setTimeout(() => countUp(n, S.cleaned ? S.freed : junkSel, { duration: 1200 }), 50);
   }
-  if (!S.orb) S.orb = orb({ size: 280, onClick: runSmart });
+  if (!S.orb) S.orb = orb({ size: 300, onClick: runSmart, machine: true });
   S.orb.set(S.phase, content);
   const o = S.orb;
   const headline = { idle: 'Prêt pour une analyse intelligente', scanning: 'Analyse de ton ordinateur…', cleaning: 'Nettoyage et protection…', done: S.cleaned ? 'Ton ordinateur est tout propre ✨' : 'Analyse terminée' }[S.phase];

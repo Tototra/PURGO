@@ -114,7 +114,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             autostart_get, autostart_set, pick_folder, reveal, open_url,
-            util::trash_paths, util::trash_info, util::empty_trash, util::platform_info, util::open_terminal, util::open_path,
+            util::trash_paths, util::trash_info, util::empty_trash, util::platform_info, util::open_terminal, util::open_path, util::open_trash,
             settings::get_settings, settings::set_settings,
             junk::scan_junk,
             privacy::scan_privacy, privacy::quit_browser,

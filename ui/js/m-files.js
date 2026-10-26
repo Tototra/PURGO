@@ -1,3 +1,4 @@
+import { reviewDelete, deleteSummary } from './deleter.js';
 import { app, h, icon, invoke, bytes, rel, header, notice, empty, button, badge, checkbox, toast, confirmDialog, itemRow, tilde, sizeBar, revealBtn, trashItems, trashSummary, daysSince } from './core.js';
 import { rerender, runScan, runClean, seg } from './kit.js';
 
@@ -34,10 +35,9 @@ lens.view = () => {
     h('div.row-main', h('div.row-name', h('span', n.name))),
     sizeBar(n.size / max, lens.tint), h('span.size', bytes(n.size)),
     h('button.icon-btn', { title: 'Mettre à la Corbeille', onclick: async () => {
-      const ok = await confirmDialog(`Mettre « ${n.name} » à la Corbeille ?`, `${bytes(n.size)} · ${tilde(n.path)}`, [{ label: 'Mettre à la Corbeille', kind: 'danger' }]);
-      if (!ok) return;
-      const r = await invoke('trash_paths', { paths: [n.path], sizes: [n.size] });
-      L.msg = trashSummary(r); L.nodes = L.nodes.filter((x) => x.path !== n.path || r.errors.length); rerender(lens);
+      const r = await reviewDelete({ items: [{ id: n.path, name: n.name, paths: [n.path], size: n.size, detail: n.path }] });
+      if (!r) return;
+      L.msg = deleteSummary(r); L.nodes = L.nodes.filter((x) => !r.doneIds.has(x.path)); rerender(lens);
     } }, icon('trash', 15)),
     revealBtn(n.path),
     n.is_dir ? h('button.icon-btn', { title: 'Ouvrir', onclick: () => openDir(n.path) }, icon('chevron', 16)) : null))));
@@ -76,11 +76,11 @@ large.view = () => {
     const s = LF.items.filter((i) => i.selected);
     bar.replaceChildren(h('footer.action-bar', h('span.ab-text', `${s.length} fichier(s) · ${bytes(s.reduce((a, i) => a + i.size, 0))}`), h('div.spacer'),
       button('Mettre à la Corbeille', async () => {
-        const ok = await confirmDialog(`Mettre ${s.length} fichier(s) à la Corbeille ?`, null, [{ label: 'Mettre à la Corbeille', kind: 'danger' }]);
-        if (!ok) return;
-        const r = await runClean(large, 'Déplacement vers la Corbeille…', () => trashItems(s));
-        LF.result = trashSummary(r);
-        LF.items = LF.items.filter((i) => !i.selected);
+        const kinds = { video: 'Vidéos', audio: 'Audio', archive: 'Archives et images disque', image: 'Images', document: 'Documents', other: 'Autres' };
+        const r = await reviewDelete({ items: s, groupBy: (i) => kinds[i.meta.kind] || 'Autres' });
+        if (!r) return;
+        LF.result = deleteSummary(r);
+        LF.items = LF.items.filter((i) => !r.doneIds.has(i.id));
         rerender(large);
       }, { kind: 'primary', disabled: !s.length })));
   };
@@ -122,9 +122,11 @@ dups.view = () => {
     const sel = D.groups.flatMap((g) => g.files.filter((f) => f.selected).length < g.files.length ? g.files.filter((f) => f.selected) : []);
     bar.replaceChildren(h('footer.action-bar', h('span.ab-text', `${bytes(sel.reduce((a, f) => a + f.size, 0))} sélectionnés · ${bytes(wasted)} en double au total`), h('div.spacer'),
       button('Supprimer les copies', async () => {
-        const r = await runClean(dups, 'Suppression des copies…', () => trashItems(sel));
-        D.result = trashSummary(r);
-        const gone = new Set(sel.map((f) => f.id));
+        const r = await reviewDelete({ title: 'Supprimer les copies', subtitle: 'L\'original de chaque groupe est conservé. Vérifie les copies à supprimer.',
+          items: sel, groupBy: (f) => D.groups.find((g) => g.files.includes(f))?.files.find((x) => !x.selected)?.name || 'Copies' });
+        if (!r) return;
+        D.result = deleteSummary(r);
+        const gone = r.doneIds;
         D.groups = D.groups.map((g) => ({ ...g, files: g.files.filter((f) => !gone.has(f.id)) })).filter((g) => g.files.length > 1);
         rerender(dups);
       }, { kind: 'primary', disabled: !sel.length })));

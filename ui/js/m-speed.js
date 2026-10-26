@@ -1,3 +1,4 @@
+import { reviewDelete, deleteSummary } from './deleter.js';
 import { app, h, icon, invoke, bytes, header, notice, button, badge, checkbox, ring, toast, confirmDialog, tilde, mapIcon, empty } from './core.js';
 import { rerender, seg, toggle, busyLine } from './kit.js';
 
@@ -157,8 +158,10 @@ startup.view = () => {
       i.can_toggle ? toggle(i.enabled, (v) => act(v ? `Activation de ${i.name}…` : `Désactivation de ${i.name}…`, 'startup_toggle', { id: i.id, on: v })) : null,
       i.path ? h('button.icon-btn', { title: 'Afficher', onclick: () => invoke('reveal', { path: i.path }) }, icon('search', 15)) : null,
       i.can_remove ? h('button.icon-btn', { title: 'Retirer du démarrage', onclick: async () => {
-        const ok = await confirmDialog(`Retirer ${i.name} du démarrage ?`, 'L\'application elle-même n\'est pas désinstallée.', [{ label: 'Retirer', kind: 'danger' }]);
-        if (ok) act(`Retrait de ${i.name}…`, 'startup_remove', { id: i.id });
+        const r = await reviewDelete({ title: `Retirer ${i.name} du démarrage`, subtitle: 'L\'application elle-même n\'est pas désinstallée.', mode: 'remove', action: 'Retirer',
+          items: [{ id: i.id, name: i.name, detail: i.command || i.location, size: 0, group: i.group }],
+          run: async () => { try { await invoke('startup_remove', { id: i.id }); return { freed: 0 }; } catch (e) { return { freed: 0, error: String(e) }; } } });
+        if (r) loadStartup();
       } }, icon('trash', 15)) : null))])));
   return parts;
 };

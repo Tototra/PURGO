@@ -579,3 +579,16 @@ pub fn open_path(path: String) -> Result<(), String> {
     };
     if r.0 == 0 || cfg!(windows) { Ok(()) } else { Err(r.1) }
 }
+
+#[tauri::command]
+pub fn open_trash() -> Result<(), String> {
+    let r = if cfg!(target_os = "macos") {
+        run("/usr/bin/open", &[&hp(".Trash").to_string_lossy()])
+    } else if cfg!(windows) {
+        let _ = run("explorer", &["shell:RecycleBinFolder"]);
+        (0, String::new())
+    } else {
+        Command::new("xdg-open").arg("trash:///").spawn().map(|_| (0, String::new())).unwrap_or((-1, "xdg-open".into()))
+    };
+    if r.0 == 0 { Ok(()) } else { Err(r.1) }
+}

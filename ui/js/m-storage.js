@@ -1,3 +1,4 @@
+import { reviewDelete, deleteSummary } from './deleter.js';
 import { app, h, icon, invoke, bytes, rel, header, notice, empty, button, badge, checkbox, toast, confirmDialog, tilde, sizeBar, ring, revealBtn, trashSummary, mapIcon } from './core.js';
 import { rerender, runScan, seg, busyLine } from './kit.js';
 import { dups } from './m-files.js';
@@ -126,9 +127,11 @@ music.view = () => {
       h('p', 'Les DAW gardent une copie de chaque version de tes projets. Tes projets actuels ne sont pas touchés.'),
       button('Mettre les sauvegardes à la Corbeille', async () => {
         const list = MU.projects.filter((p) => p.backup_path);
-        const r = await invoke('trash_paths', { paths: list.map((p) => p.backup_path), sizes: list.map((p) => p.backup) });
-        MU.result = `Sauvegardes : ${trashSummary(r)}`;
-        for (const p of list) { p.size -= p.backup; p.backup = 0; p.backup_path = null; }
+        const r = await reviewDelete({ title: 'Supprimer les sauvegardes automatiques', subtitle: 'Seuls les dossiers Backup sont supprimés : tes projets actuels restent intacts.',
+          items: list.map((p) => ({ id: p.backup_path, name: p.name, detail: p.backup_path, paths: [p.backup_path], size: p.backup, group: p.daw, proj: p })) });
+        if (!r) return;
+        MU.result = deleteSummary(r);
+        for (const p of list) if (r.doneIds.has(p.backup_path)) { p.size -= p.backup; p.backup = 0; p.backup_path = null; }
         MU.projects = MU.projects.filter((p) => p.daw !== 'FL Studio' || p.size > 0);
         rerender(music);
       }, { kind: 'small', disabled: !backups })),

@@ -1,3 +1,4 @@
+import { reviewDelete, deleteSummary } from './deleter.js';
 import { app, h, icon, invoke, bytes, rel, header, notice, empty, button, badge, checkbox, toast, confirmDialog, itemRow, tilde, sizeBar,
   revealBtn, trashSummary, categoryList, daysSince } from './core.js';
 import { rerender, runScan, runClean, listModule, seg, busyLine } from './kit.js';
@@ -43,13 +44,13 @@ async function refreshEnv(e) {
 }
 
 async function uninstallPkg(env, pkg) {
-  const ok = await confirmDialog(`Désinstaller ${pkg.name} de ${env.name} ?`, 'Purgo utilise pip (ou uv) de cet environnement, comme dans le terminal.', [{ label: 'Désinstaller', kind: 'danger' }]);
-  if (!ok) return;
-  await pyBusy(`Désinstallation de ${pkg.name}…`, async () => {
-    await invoke('python_uninstall', { env: env.path, package: pkg.name });
-    PY.msg = `${pkg.name} désinstallé de ${env.name} · ${bytes(pkg.size)} libérés`;
-    await refreshEnv(env);
-  });
+  const r = await reviewDelete({ title: `Désinstaller ${pkg.name}`, subtitle: 'Purgo utilise pip (ou uv) de cet environnement, comme dans le terminal.', mode: 'uninstall', action: 'Désinstaller',
+    items: [{ id: `${env.path}#${pkg.name}`, name: pkg.name, detail: `${env.name} · ${pkg.version || ''}`, size: pkg.size, group: env.name }],
+    run: async () => { await invoke('python_uninstall', { env: env.path, package: pkg.name }); return { freed: pkg.size }; } });
+  if (!r) return;
+  PY.msg = deleteSummary(r);
+  await refreshEnv(env);
+  rerender(python);
 }
 
 async function trashEnvs(list) {
@@ -57,13 +58,16 @@ async function trashEnvs(list) {
     'Ils partent dans la Corbeille. Avec la sauvegarde, un fichier requirements-…-purgo.txt est écrit dans chaque projet pour pouvoir tout réinstaller.',
     [{ label: 'Sauvegarder puis supprimer', value: 'save' }, { label: 'Supprimer sans sauvegarder', value: 'nosave', kind: 'danger' }]);
   if (!choice) return;
-  await pyBusy('Suppression…', async () => {
-    const r = await invoke('python_trash_envs', { envs: list, save: choice === 'save' });
-    PY.msg = `${list.length} environnement(s) supprimé(s) · ${trashSummary(r)}` + (choice === 'save' ? ' · requirements sauvegardés dans les projets' : '');
-    const gone = new Set(list.map((e) => e.path));
-    PY.report.envs = PY.report.envs.filter((e) => !gone.has(e.path));
-    if (PY.sel && gone.has(PY.sel)) PY.sel = null;
-  });
+  const r = await reviewDelete({ title: 'Supprimer des environnements Python',
+    subtitle: choice === 'save' ? 'Un requirements-…-purgo.txt est écrit dans chaque projet avant la suppression.' : 'Aucune sauvegarde des paquets ne sera faite.',
+    items: list.map((e) => ({ id: e.path, name: e.name, detail: e.path, paths: [e.path], size: e.size, group: e.kind, env: e,
+      badges: [e.broken && { text: 'Cassé', color: 'red' }, e.tool_owned && { text: 'Outil', color: 'gray' }].filter(Boolean) })),
+    run: async (i) => { const t = await invoke('python_trash_envs', { envs: [i.env], save: choice === 'save' }); return { freed: t.freed, error: t.errors.length ? t.errors.join(' · ') : null }; } });
+  if (!r) return;
+  PY.msg = deleteSummary(r) + (choice === 'save' ? ' · requirements sauvegardés dans les projets' : '');
+  PY.report.envs = PY.report.envs.filter((e) => !r.doneIds.has(e.path));
+  if (PY.sel && r.doneIds.has(PY.sel)) PY.sel = null;
+  rerender(python);
 }
 
 function insights() {
@@ -152,13 +156,14 @@ function interpPane() {
       i.used_by.length ? h('div.row-detail', `Utilisé par : ${i.used_by.join(', ')}`) : null),
     h('span.size', bytes(i.size)),
     button('Supprimer', async () => {
-      const ok = await confirmDialog(`Supprimer Python ${i.version} (${i.source}) ?`,
-        i.used_by.length ? `⚠️ ${i.used_by.length} environnement(s) l'utilisent et seront cassés : ${i.used_by.join(', ')}.` : 'Aucun environnement ne l\'utilise.', [{ label: 'Supprimer', kind: 'danger' }]);
-      if (!ok) return;
-      await pyBusy(`Suppression de Python ${i.version}…`, async () => {
-        PY.msg = await invoke('python_remove_interpreter', { root: i.root, source: i.source, size: i.size });
-        PY.report.interpreters = PY.report.interpreters.filter((x) => x.root !== i.root);
-      });
+      const r = await reviewDelete({ title: `Supprimer Python ${i.version}`, mode: 'uninstall', action: 'Supprimer',
+        subtitle: i.used_by.length ? `Attention : ${i.used_by.length} environnement(s) l'utilisent et seront cassés : ${i.used_by.join(', ')}.` : 'Aucun environnement ne l\'utilise.',
+        items: [{ id: i.root, name: `Python ${i.version}`, detail: i.root, paths: [i.root], size: i.size, group: i.source }],
+        run: async () => { await invoke('python_remove_interpreter', { root: i.root, source: i.source, size: i.size }); return { freed: i.size }; } });
+      if (!r) return;
+      PY.msg = deleteSummary(r);
+      PY.report.interpreters = PY.report.interpreters.filter((x) => !r.doneIds.has(x.root));
+      rerender(python);
     }, { kind: 'small', disabled: !i.removable || !!PY.busy }))));
 }
 
@@ -169,12 +174,14 @@ function cachesPane() {
   const paint = () => {
     const s = cats.flatMap((c) => c.items).filter((i) => i.selected);
     bar.replaceChildren(h('footer.action-bar', h('span.ab-text', `${bytes(s.reduce((a, i) => a + i.size, 0))} sélectionnés`), h('div.spacer'),
-      button('Nettoyer', () => pyBusy('Nettoyage des caches…', async () => {
-        const r = await invoke('trash_paths', { paths: s.flatMap((i) => i.paths), sizes: s.map((i) => i.size) });
-        PY.msg = trashSummary(r);
-        for (const c of cats) c.items = c.items.filter((i) => !i.selected);
+      button('Nettoyer', async () => {
+        const r = await reviewDelete({ items: cats.flatMap((c) => c.items.filter((i) => i.selected).map((i) => ({ ...i, group: c.name }))) });
+        if (!r) return;
+        PY.msg = deleteSummary(r);
+        for (const c of cats) c.items = c.items.filter((i) => !r.doneIds.has(i.id));
         PY.report.caches = cats.filter((c) => c.items.length);
-      }), { kind: 'primary', disabled: !s.length })));
+        rerender(python);
+      }, { kind: 'primary', disabled: !s.length })));
   };
   paint();
   return h('div', { style: { display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 } }, categoryList(cats, paint), bar);
@@ -213,7 +220,8 @@ export const ai = listModule({
   emptyTitle: 'Des Go de poids neuronaux',
   emptyMessage: 'Un modèle local pèse souvent 2 à 40 Go. Purgo les liste tous avec leur date de dernière utilisation. Rien n\'est présélectionné.',
   note: 'Supprimer un modèle Ollama retire aussi ses fichiers de poids, sauf ceux partagés avec un autre modèle. Il se retélécharge avec « ollama pull ».',
-  deleteFn: (sel) => invoke('ai_delete', { paths: sel.map((i) => i.paths[0]), sizes: sel.map((i) => i.size) }),
+  runItem: (i) => invoke('ai_delete', { paths: [i.paths[0]], sizes: [i.size] }).then((r) => ({ freed: r.freed, error: r.errors.length ? r.errors.join(' · ') : null })),
+  groupBy: (i) => i.detail.split(' · ')[0],
 });
 
 // ------------------------------------------------------------------ Git
@@ -264,13 +272,13 @@ git.view = () => {
     }, { disabled: !sel.length || !!G.busy, title: 'git gc : réduit le dossier .git sans rien perdre' }),
     button('Mettre à la Corbeille', async () => {
       const unsaved = sel.filter((r) => !r.saved).length;
-      const ok = await confirmDialog(`Mettre ${sel.length} dépôt(s) à la Corbeille ?`,
-        unsaved ? `⚠️ ${unsaved} d'entre eux ont du travail qui n'existe que sur cet ordinateur (pas de serveur, commits non poussés ou modifications en cours).` : 'Tous sont sauvegardés sur un serveur : tu pourras les récupérer avec git clone.',
-        [{ label: 'Mettre à la Corbeille', kind: 'danger' }]);
-      if (!ok) return;
-      const r = await runClean(git, 'Déplacement vers la Corbeille…', () => invoke('trash_paths', { paths: sel.map((x) => x.path), sizes: sel.map((x) => x.size) }));
-      G.result = trashSummary(r);
-      G.repos = G.repos.filter((x) => !x.selected);
+      const r = await reviewDelete({ title: 'Supprimer des dépôts Git',
+        subtitle: unsaved ? `Attention : ${unsaved} dépôt(s) contiennent du travail qui n'existe que sur cet ordinateur.` : 'Tous sont sauvegardés sur un serveur : tu pourras les récupérer avec git clone.',
+        items: sel.map((x) => ({ id: x.path, name: x.name, detail: x.path, paths: [x.path], size: x.size, group: x.saved ? 'Sauvegardés sur un serveur' : 'Pas sauvegardés : uniquement sur cet ordinateur',
+          badges: [!x.remote && { text: 'Aucun serveur', color: 'red' }, x.ahead && { text: `${x.ahead} commit(s) non poussé(s)`, color: 'orange' }, x.dirty && { text: `${x.dirty} modif.`, color: 'yellow' }].filter(Boolean) })) });
+      if (!r) return;
+      G.result = deleteSummary(r);
+      G.repos = G.repos.filter((x) => !r.doneIds.has(x.path));
       rerender(git);
     }, { kind: 'danger', disabled: !sel.length || !!G.busy })));
   return parts;
@@ -309,12 +317,14 @@ docker.view = () => {
     if (ok) dockerRun('Nettoyage complet…', ['system', 'prune', '-a', '-f', '--volumes']);
   }), h('div.spacer'), button('Supprimer la sélection', async () => {
     const sel = s.items.filter((i) => i.selected);
-    const c = sel.filter((i) => i.meta.kind === 'container').map((i) => i.meta.ref);
-    const im = sel.filter((i) => i.meta.kind === 'image').map((i) => i.meta.ref);
-    const v = sel.filter((i) => i.meta.kind === 'volume').map((i) => i.meta.ref);
-    if (c.length) await dockerRun('Suppression des conteneurs…', ['rm', ...c]);
-    if (im.length) await dockerRun('Suppression des images…', ['rmi', '-f', ...im]);
-    if (v.length) await dockerRun('Suppression des volumes…', ['volume', 'rm', ...v]);
+    const kinds = { container: 'Conteneurs arrêtés', image: 'Images', volume: 'Volumes' };
+    const args = { container: (r) => ['rm', r], image: (r) => ['rmi', '-f', r], volume: (r) => ['volume', 'rm', r] };
+    const r = await reviewDelete({ title: 'Supprimer dans Docker', mode: 'remove', action: 'Supprimer',
+      items: sel.map((i) => ({ ...i, size: 0, group: kinds[i.meta.kind] })),
+      run: async (i) => { try { await invoke('docker_cmd', { args: args[i.meta.kind](i.meta.ref) }); return { freed: 0 }; } catch (e) { return { freed: 0, error: String(e).slice(0, 200) }; } } });
+    if (!r) return;
+    DK.msg = deleteSummary(r);
+    await loadDocker();
   }, { kind: 'primary' })));
   return parts;
 };

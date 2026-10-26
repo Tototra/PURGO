@@ -1,6 +1,7 @@
 // Reusable module patterns: re-rendering, the generic "scan a list, trash the selection" module,
 // and the categories module (junk-like).
 
+import { reviewDelete, deleteSummary } from './deleter.js';
 import { app, h, header, notice, empty, scanning, onProgress, button, itemRow, actionBar, bytes, invoke, trashItems,
   trashSummary, confirmDialog, categoryList, toast } from './core.js';
 
@@ -62,14 +63,10 @@ export function listModule(def) {
 
   async function clean() {
     const sel = st.items.filter((i) => i.selected);
-    const total = sel.reduce((a, i) => a + i.size, 0);
-    const ok = await confirmDialog(`${def.actionTitle || 'Mettre à la Corbeille'} : ${bytes(total)} ?`,
-      def.confirmText || 'Tout part dans la Corbeille : rien n\'est perdu tant que tu ne la vides pas.', [{ label: def.actionTitle || 'Mettre à la Corbeille', kind: 'danger' }]);
-    if (!ok) return;
-    const r = await runClean(m, 'Nettoyage en cours…', () => (def.deleteFn ? def.deleteFn(sel) : trashItems(sel)));
-    st.result = trashSummary(r);
-    const gone = new Set(sel.map((i) => i.id));
-    st.items = st.items.filter((i) => !gone.has(i.id) || (r.errors || []).some((e) => e.startsWith(i.name)));
+    const r = await reviewDelete({ items: sel, run: def.runItem, mode: def.mode || 'trash', groupBy: def.groupBy, note: def.note });
+    if (!r) return;
+    st.result = deleteSummary(r);
+    st.items = st.items.filter((i) => !r.doneIds.has(i.id));
     rerender(m);
   }
 
@@ -107,19 +104,13 @@ export function categoryModule(def) {
     rerender(m);
   };
 
-  m.clean = async (silent = false) => {
-    const sel = st.cats.flatMap((c) => c.items.filter((i) => i.selected));
-    if (!sel.length) return { freed: 0, errors: [] };
-    if (!silent) {
-      const total = sel.reduce((a, i) => a + i.size, 0);
-      const ok = await confirmDialog(`Déplacer ${bytes(total)} dans la Corbeille ?`,
-        'Les fichiers restent récupérables dans la Corbeille. Ferme les applications concernées pour un meilleur résultat.', [{ label: def.actionTitle || 'Nettoyer', kind: 'danger' }]);
-      if (!ok) return null;
-    }
-    const r = await runClean(m, 'Nettoyage en cours…', () => trashItems(sel));
-    st.result = trashSummary(r);
-    const done = new Set(sel.map((i) => i.id));
-    for (const c of st.cats) c.items = c.items.filter((i) => !done.has(i.id));
+  m.clean = async () => {
+    const sel = st.cats.flatMap((c) => c.items.filter((i) => i.selected).map((i) => ({ ...i, group: c.name })));
+    if (!sel.length) return null;
+    const r = await reviewDelete({ items: sel, note: 'Ferme les applications concernées pour un meilleur résultat.' });
+    if (!r) return null;
+    st.result = deleteSummary(r);
+    for (const c of st.cats) c.items = c.items.filter((i) => !r.doneIds.has(i.id));
     st.cats = st.cats.filter((c) => c.items.length);
     rerender(m);
     return r;

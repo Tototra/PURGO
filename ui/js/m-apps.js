@@ -1,3 +1,4 @@
+import { reviewDelete, deleteSummary, trashRun } from './deleter.js';
 import { app, h, icon, invoke, bytes, rel, header, notice, empty, button, badge, checkbox, toast, confirmDialog, itemRow, tilde, mapIcon, scanning, onProgress } from './core.js';
 import { rerender, seg, busyLine } from './kit.js';
 
@@ -22,18 +23,20 @@ async function pick(a) {
 
 async function doUninstall(a, keepApp) {
   const what = keepApp ? 'Réinitialiser' : 'Désinstaller';
-  const ok = await confirmDialog(`${what} ${a.name} ?`, keepApp
-    ? 'L\'application est conservée ; ses réglages et données sélectionnés partent dans la Corbeille.'
-    : (app.os === 'windows' && !a.id.startsWith('appx:') ? 'Le désinstallateur de l\'application va s\'ouvrir. Une fois terminé, Purgo met ses restes sélectionnés à la Corbeille.' : 'L\'application et ses fichiers sélectionnés partent dans la Corbeille (ou sont désinstallés par leur gestionnaire de paquets).'),
-    [{ label: what, kind: 'danger' }]);
-  if (!ok) return;
-  U.busy = `${what} ${a.name}…`; rerender(uninstaller);
-  try {
-    U.msg = await invoke('app_uninstall', { id: a.id, extra: (U.left || []).filter((i) => i.selected).flatMap((i) => i.paths), keepApp });
-    if (!keepApp) { U.apps = U.apps.filter((x) => x.id !== a.id); U.sel = null; U.left = null; }
-    else await pick(a);
-  } catch (e) { toast(String(e), 'err'); }
-  U.busy = null; rerender(uninstaller);
+  const left = (U.left || []).filter((i) => i.selected).map((i) => ({ ...i, group: 'Fichiers associés' }));
+  const items = keepApp ? left : [{ id: `app:${a.id}`, name: a.name, detail: a.path || a.source, size: a.size, group: 'Application', isApp: true }, ...left];
+  const r = await reviewDelete({ title: `${what} ${a.name}`, mode: keepApp ? 'trash' : 'uninstall', action: what, items,
+    subtitle: keepApp ? 'L\'application est conservée ; ses réglages et données partent dans la Corbeille.'
+      : (app.os === 'windows' && !a.id.startsWith('appx:') ? 'Le désinstallateur de l\'application va s\'ouvrir, puis Purgo met ses restes à la Corbeille.' : 'L\'application d\'abord, puis ses fichiers associés.'),
+    run: async (i) => {
+      if (!i.isApp) return trashRun(i);
+      try { await invoke('app_uninstall', { id: a.id, extra: [], keepApp: false }); return { freed: a.size }; } catch (e) { return { freed: 0, error: String(e).slice(0, 200) }; }
+    } });
+  if (!r) return;
+  U.msg = deleteSummary(r);
+  if (!keepApp && r.doneIds.has(`app:${a.id}`)) { U.apps = U.apps.filter((x) => x.id !== a.id); U.sel = null; U.left = null; }
+  else await pick(a);
+  rerender(uninstaller);
 }
 
 uninstaller.view = () => {
@@ -50,7 +53,7 @@ uninstaller.view = () => {
     if (!U.orphans.length) return [...parts, empty({ icon: 'check', title: 'Rien à signaler', message: 'Aucun reste d\'application trouvé.' })];
     const bar = h('div');
     const paint = () => { const s = U.orphans.filter((i) => i.selected); bar.replaceChildren(h('footer.action-bar', h('span.ab-text', `${bytes(s.reduce((a, i) => a + i.size, 0))} sélectionnés`), h('div.spacer'),
-      button('Mettre à la Corbeille', async () => { const r = await invoke('trash_paths', { paths: s.flatMap((i) => i.paths), sizes: s.map((i) => i.size) }); U.msg = `${bytes(r.freed)} mis à la Corbeille`; U.orphans = U.orphans.filter((i) => !i.selected); rerender(uninstaller); }, { kind: 'primary', disabled: !s.length }))); };
+      button('Mettre à la Corbeille', async () => { const r = await reviewDelete({ items: s, groupBy: (i) => i.detail }); if (!r) return; U.msg = deleteSummary(r); U.orphans = U.orphans.filter((i) => !r.doneIds.has(i.id)); rerender(uninstaller); }, { kind: 'primary', disabled: !s.length }))); };
     paint();
     return [...parts, h('div.list', U.orphans.map((i) => itemRow(i, paint))), bar];
   }
@@ -139,8 +142,10 @@ packages.view = () => {
     PK.brew?.length ? h('div.card', h('h4', icon('box', 18), 'Paquets Homebrew installés'), h('p', 'Ceux que tu as installés toi-même (sans leurs dépendances), du plus lourd au plus léger.'),
       PK.brew.map((i) => h('div.row', h('div.row-main', h('div.row-name', h('span', i.name), ...i.badges.map((b) => badge(b.text, b.color))), h('div.row-detail', `Installé ${rel(i.meta.installed)}`)),
         h('span.size', bytes(i.size)), button('Désinstaller', async () => {
-          const ok = await confirmDialog(`Désinstaller ${i.name} ?`, 'Avec brew uninstall. Tu peux le réinstaller à tout moment.', [{ label: 'Désinstaller', kind: 'danger' }]);
-          if (ok) act({ id: 'brew' }, i.meta.cask ? 'uninstall_cask' : 'uninstall', i.meta.name, `Désinstallation de ${i.name}…`);
+          const r = await reviewDelete({ title: `Désinstaller ${i.name}`, subtitle: 'Avec brew uninstall. Tu peux le réinstaller à tout moment.', mode: 'uninstall', action: 'Désinstaller',
+            items: [{ ...i, group: 'Homebrew' }],
+            run: async () => { try { await invoke('package_action', { manager: 'brew', action: i.meta.cask ? 'uninstall_cask' : 'uninstall', target: i.meta.name }); return { freed: i.size }; } catch (e) { return { freed: 0, error: String(e).slice(0, 200) }; } } });
+          if (r) { PK.msg = deleteSummary(r); loadPackages(); }
         }, { kind: 'small' })))) : null));
   return parts;
 };
