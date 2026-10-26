@@ -125,7 +125,14 @@ async function runSmart() {
   const done = (k) => { S.steps[k] = 'done'; S.paintSteps?.(); };
   // keep the drum turning (and the water rising) long enough to be seen
   const minSpin = new Promise((r) => setTimeout(r, app.settings.reduce_motion ? 0 : 5200));
-  const loader = setInterval(() => S.orb?.lo.feed('·'), 700);
+  const t0 = performance.now();
+  const loader = setInterval(() => {
+    S.orb?.lo.feed('·');
+    // real progress: finished steps, smoothed by time so the knob turns steadily
+    const n = Object.values(S.steps).filter((v) => v === 'done').length;
+    const time = (performance.now() - t0) / 5200;
+    S.orb?.lo.setProgress(Math.min(0.95, Math.min(time, (n + 1) / 4), Math.max(time * 0.6, n / 3)));
+  }, 200);
   await Promise.all([
     minSpin,
     invoke('scan_junk').then((c) => { junk.st.cats = c; done('junk'); }),
@@ -156,7 +163,7 @@ async function cleanSmart() {
     note: 'Réduis cette fenêtre pour voir la machine essorer.',
     run: (i) => (i.kind === 'threat' ? threatRun(i) : trashRun(i)),
     onStart: () => { S.phase = 'cleaning'; S.count = null; rerender(smart); },
-    onItem: (i, freed) => { freedLive = freed; S.orb?.lo.feed(i.name); S.tick?.set(i.paths?.[0] || i.name); if (S.count) countUp(S.count, freed, { duration: 350 }); },
+    onItem: (i, freed, k) => { freedLive = freed; S.orb?.lo.setProgress(k); S.orb?.lo.feed(i.name); S.tick?.set(i.paths?.[0] || i.name); if (S.count) countUp(S.count, freed, { duration: 350 }); },
   });
   if (!r) { if (S.phase === 'cleaning') { S.phase = 'done'; rerender(smart); } return; }
   for (const c of junk.st.cats || []) c.items = c.items.filter((i) => !r.doneIds.has(i.id));

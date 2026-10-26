@@ -24,7 +24,9 @@ export class Drum {
     this.canvas.height = this.mh * this.dpr;
     this.canvas.style.width = `${this.mw}px`;
     this.canvas.style.height = `${this.mh}px`;
-    this.dial = -0.9;
+    this.dial = 0;
+    this.progress = null; // 0..1 when the task reports it, null → estimated
+    this.autoP = 0;
     this.vib = { x: 0, y: 0, r: 0 };
     this.ctx = this.canvas.getContext('2d');
     this.phase = 'idle';
@@ -67,9 +69,13 @@ export class Drum {
     if (p === this.phase) return;
     const prev = this.phase;
     this.phase = p;
+    if (p === 'scanning' || p === 'cleaning') { this.progress = null; this.autoP = 0; if (this.dial > TAU - 0.1) this.dial = 0; }
     if (p === 'done' && prev !== 'idle') this.burst();
     if (p === 'scanning') this.chips = this.chips.slice(-4);
   }
+
+  /** Task progress 0..1: drives the water level and the program dial. */
+  setProgress(v) { this.progress = Math.max(0, Math.min(1, v)); }
 
   /** Door "clunk" when the drum is clicked. */
   pulse() { this.shake = 1; }
@@ -127,17 +133,21 @@ export class Drum {
     this.omega += (target - this.omega) * Math.min(1, dt * acc);
     this.angle += this.omega * dt;
     this.slosh += (((this.omega - prevOmega) / Math.max(dt, 1e-3)) * 0.004 - this.slosh) * Math.min(1, dt * 2);
-    const lvl = { idle: 0.12, scanning: 0.52, cleaning: 0.03, done: 0.2 }[p];
-    // filling is slow and steady (a tap), draining is quicker
-    const rate = lvl > this.level ? 0.07 : p === 'cleaning' ? 0.16 : 0.25;
-    this.level += Math.sign(lvl - this.level) * Math.min(Math.abs(lvl - this.level), rate * dt * (this.reduce ? 3 : 1));
-    this.filling = lvl - this.level > 0.01;
+    // without a real progress value, creep towards 92 % so the drum never looks stuck
+    const busy = p === 'scanning' || p === 'cleaning';
+    if (busy) this.autoP += (0.92 - this.autoP) * Math.min(1, dt * 0.35);
+    const prog = p === 'done' ? 1 : busy ? Math.max(this.progress ?? 0, this.progress == null ? this.autoP : 0) : 0;
+    this.prog = prog;
+    // water fills with the task: empty-ish at start, full at the end
+    const lvl = busy || p === 'done' ? 0.06 + prog * 0.5 : 0.12;
+    this.level += (lvl - this.level) * Math.min(1, dt * 2.2);
     this.settle *= Math.pow(0.04, dt);
     this.shake *= Math.pow(0.002, dt);
     this.t += dt;
     if (this.machine) {
-      const dialTarget = { idle: -0.9, scanning: -0.9 + ((this.t * 0.9) % 2.6), cleaning: 1.9, done: 0.5 }[p];
-      this.dial += (dialTarget - this.dial) * Math.min(1, dt * 6);
+      // program knob: 12 o'clock → full turn back to 12 as the task completes
+      const dialTarget = this.prog * TAU;
+      this.dial += (dialTarget - this.dial) * Math.min(1, dt * (p === 'idle' ? 3 : 5));
       const amp = (p === 'cleaning' ? Math.min(3.2, this.omega * 0.32) : p === 'scanning' ? 0.9 : 0) * k + this.shake * 2 + this.settle * 4;
       this.vib.x = Math.sin(this.t * 53) * amp + Math.sin(this.t * 7.3) * amp * 0.5;
       this.vib.y = Math.abs(Math.sin(this.t * 41)) * -amp * 0.7;
@@ -192,25 +202,6 @@ export class Drum {
     this.bubbles = this.bubbles.filter((b) => b.life > 0 && b.y > -G);
   }
 
-  /** Water pouring in from the top of the glass while the drum fills. */
-  drawJet(c, cx, cy, G) {
-    if (!this.filling || this.phase !== 'scanning') return;
-    const surf = cy + G - this.level * G * 2;
-    const x = cx - G * 0.35;
-    c.globalAlpha = 0.85;
-    c.fillStyle = this.tint;
-    const w = 5 + Math.sin(this.t * 20) * 1.2;
-    c.fillRect(x - w / 2, cy - G, w, surf - (cy - G));
-    c.fillStyle = 'rgba(255,255,255,0.5)';
-    c.fillRect(x - 1, cy - G, 1.5, surf - (cy - G));
-    c.fillStyle = this.tint;
-    for (let i = 0; i < 4; i++) {
-      const k = (this.t * 2.5 + i / 4) % 1;
-      c.beginPath(); c.arc(x + (i % 2 ? 7 : -7) * k * 2, surf - 6 * Math.sin(k * Math.PI), 2.2, 0, TAU); c.fill();
-    }
-    c.globalAlpha = 1;
-  }
-
   drawMachine(c) {
     const { x0, x1, y0, y1, pb } = this.layout();
     const w = x1 - x0, p = this.phase;
@@ -257,7 +248,9 @@ export class Drum {
     const dx = x0 + w * 0.43, dy = y0 + bh * 0.5, dr = bh * 0.33;
     c.strokeStyle = '#9aa3ab'; c.lineWidth = 1.5;
     for (let i = 0; i < 12; i++) {
-      const a = -Math.PI * 1.25 + (i / 11) * Math.PI * 1.5;
+      const a = -Math.PI / 2 + (i / 12) * TAU;
+      c.strokeStyle = i / 12 < this.dial / TAU - 0.001 || (i === 0 && this.dial > TAU - 0.05) ? this.tint : '#9aa3ab';
+      c.lineWidth = i % 3 ? 1.5 : 2.5;
       c.beginPath();
       c.moveTo(dx + Math.cos(a) * (dr + 4), dy + Math.sin(a) * (dr + 4));
       c.lineTo(dx + Math.cos(a) * (dr + 8), dy + Math.sin(a) * (dr + 8));
@@ -342,7 +335,6 @@ export class Drum {
     }
 
     water(0, 0.3);
-    this.drawJet(c, cx, cy, G);
 
     c.strokeStyle = 'rgba(255,255,255,0.7)';
     c.lineWidth = 1.4;

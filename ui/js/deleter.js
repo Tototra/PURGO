@@ -185,6 +185,7 @@ export function reviewDelete({ title, subtitle, items, groupBy, action = 'Mettre
         countUp(freedEl, result.freed, { duration: 350 });
         pillText.textContent = `Suppression ${done}/${todo.length} · ${bytes(result.freed)}`;
         pillRing.style.width = `${(k * 100).toFixed(1)}%`;
+        drum.setProgress(k);
       };
       paintProgress(todo[0]);
       const pool = todo.length > 60 ? 4 : 1;
@@ -209,7 +210,7 @@ export function reviewDelete({ title, subtitle, items, groupBy, action = 'Mettre
           }
           done++;
           processedBytes += i.size;
-          onItem?.(i, result.freed);
+          onItem?.(i, result.freed, Math.max(done / todo.length, processedBytes / totalBytes));
           updateRow(i);
           paintProgress(null);
         }
