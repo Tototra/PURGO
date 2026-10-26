@@ -123,11 +123,16 @@ async function runSmart() {
   const offJ = onProgress('junk', (t, b) => { S.tick?.set(t); S.orb?.lo.feed(t); if (b) countUp(S.count, b, { duration: 500 }); });
   const offS = onProgress('security', (t) => { if (S.steps.junk === 'done') { S.tick?.set(t); S.orb?.lo.feed(t); } });
   const done = (k) => { S.steps[k] = 'done'; S.paintSteps?.(); };
+  // keep the drum turning (and the water rising) long enough to be seen
+  const minSpin = new Promise((r) => setTimeout(r, app.settings.reduce_motion ? 0 : 5200));
+  const loader = setInterval(() => S.orb?.lo.feed('·'), 700);
   await Promise.all([
+    minSpin,
     invoke('scan_junk').then((c) => { junk.st.cats = c; done('junk'); }),
     invoke('scan_security').then((r) => { security.st.report = r; done('security'); }),
     invoke('startup_list').then((l) => { S.startup = l; done('startup'); }),
   ]).catch((e) => toast(String(e), 'err'));
+  clearInterval(loader);
   offJ(); offS();
   await new Promise((r) => setTimeout(r, 450));
   S.phase = 'done';

@@ -22,7 +22,10 @@ export async function runScan(m, { text, progressKey, cmd, args, showBytes = tru
   const off = onProgress(progressKey || m.id, (t, b) => st.scan.update(t, b));
   rerender(m);
   try {
+    const t0 = performance.now();
     const r = await invoke(cmd, args || {});
+    const left = 2200 - (performance.now() - t0);
+    if (left > 0 && !app.settings.reduce_motion) await new Promise((res) => setTimeout(res, left));
     if (app.module === m.id && !app.settings.reduce_motion) {
       st.scan.finish('Analyse terminée');
       await new Promise((res) => setTimeout(res, 900));

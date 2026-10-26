@@ -32,7 +32,7 @@ export class Drum {
     this.omega = 0;
     this.settle = 0;
     this.shake = 0;
-    this.level = 0.32;
+    this.level = 0.12;
     this.slosh = 0;
     this.t = 0;
     this.hover = 0;
@@ -84,24 +84,29 @@ export class Drum {
     this.bubbles.push({ x: (Math.random() - 0.5) * G * 1.4, y: anywhere ? G * Math.random() * 0.9 : G * 0.9, r: 2 + Math.random() * 5, v: 20 + Math.random() * 50, life: 1 });
   }
 
-  addChip(label, resting = false) {
+  addChip(_label, resting = false) {
     const G = this.G;
-    const w = label ? Math.min(G * 0.95, 26 + label.length * 5.4) : 18 + Math.random() * 16;
-    const h = label ? 18 : 12 + Math.random() * 8;
-    this.chips.push({
+    const kind = ['shirt', 'sock', 'towel', 'shirt'][(Math.random() * 4) | 0];
+    const sc = this.size / 300;
+    const w = (kind === 'towel' ? 34 : kind === 'sock' ? 12 : 30) * sc * (0.9 + Math.random() * 0.25);
+    const h = (kind === 'towel' ? 22 : kind === 'sock' ? 26 : 28) * sc * (0.9 + Math.random() * 0.25);
+    const label = null;
+    this.chips.push({ kind,
       x: resting ? (Math.random() - 0.5) * G : (Math.random() - 0.5) * G * 0.6,
       y: resting ? G * 0.6 : -G * 0.7,
       vx: (Math.random() - 0.5) * 60, vy: 0, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 4,
       w, h, label, color: CHIP_COLORS[(Math.random() * CHIP_COLORS.length) | 0], life: 1, age: 0,
     });
-    if (this.chips.length > 16) this.chips.shift();
+    if (this.chips.length > 11) this.chips.shift();
   }
 
   /** A found file drops into the drum. */
   feed(text) {
     if (!text) return;
-    const name = text.split(/[\\/]/).filter(Boolean).pop() || text;
-    this.addChip(name.length > 18 ? name.slice(0, 17) + '…' : name);
+    const now = performance.now();
+    if (now - (this.lastFeed || 0) < 350) return;
+    this.lastFeed = now;
+    this.addChip(null);
   }
 
   frame(now) {
@@ -116,14 +121,17 @@ export class Drum {
 
   step(dt) {
     const p = this.phase, G = this.G, k = this.reduce ? 0.3 : 1;
-    const target = { idle: this.hover * 0.6, scanning: 4.2, cleaning: 11, done: 0 }[p] * k;
+    const target = { idle: 0.25 + this.hover * 0.5, scanning: 3.4, cleaning: 11, done: 0 }[p] * k;
     const acc = p === 'cleaning' ? 2.2 : 3;
     const prevOmega = this.omega;
     this.omega += (target - this.omega) * Math.min(1, dt * acc);
     this.angle += this.omega * dt;
     this.slosh += (((this.omega - prevOmega) / Math.max(dt, 1e-3)) * 0.004 - this.slosh) * Math.min(1, dt * 2);
-    const lvl = { idle: 0.32, scanning: 0.42, cleaning: 0.04, done: 0.24 }[p];
-    this.level += (lvl - this.level) * Math.min(1, dt * (p === 'cleaning' ? 0.7 : 1.4));
+    const lvl = { idle: 0.12, scanning: 0.52, cleaning: 0.03, done: 0.2 }[p];
+    // filling is slow and steady (a tap), draining is quicker
+    const rate = lvl > this.level ? 0.07 : p === 'cleaning' ? 0.16 : 0.25;
+    this.level += Math.sign(lvl - this.level) * Math.min(Math.abs(lvl - this.level), rate * dt * (this.reduce ? 3 : 1));
+    this.filling = lvl - this.level > 0.01;
     this.settle *= Math.pow(0.04, dt);
     this.shake *= Math.pow(0.002, dt);
     this.t += dt;
@@ -182,6 +190,25 @@ export class Drum {
     if ((p === 'cleaning' || p === 'scanning') && Math.random() < dt * (p === 'cleaning' ? 14 : 3)) this.bubble(false);
     for (const b of this.bubbles) { b.y -= b.v * dt; b.x += Math.sin(this.t * 3 + b.r) * 0.3; b.life -= dt * 0.55; }
     this.bubbles = this.bubbles.filter((b) => b.life > 0 && b.y > -G);
+  }
+
+  /** Water pouring in from the top of the glass while the drum fills. */
+  drawJet(c, cx, cy, G) {
+    if (!this.filling || this.phase !== 'scanning') return;
+    const surf = cy + G - this.level * G * 2;
+    const x = cx - G * 0.35;
+    c.globalAlpha = 0.85;
+    c.fillStyle = this.tint;
+    const w = 5 + Math.sin(this.t * 20) * 1.2;
+    c.fillRect(x - w / 2, cy - G, w, surf - (cy - G));
+    c.fillStyle = 'rgba(255,255,255,0.5)';
+    c.fillRect(x - 1, cy - G, 1.5, surf - (cy - G));
+    c.fillStyle = this.tint;
+    for (let i = 0; i < 4; i++) {
+      const k = (this.t * 2.5 + i / 4) % 1;
+      c.beginPath(); c.arc(x + (i % 2 ? 7 : -7) * k * 2, surf - 6 * Math.sin(k * Math.PI), 2.2, 0, TAU); c.fill();
+    }
+    c.globalAlpha = 1;
   }
 
   drawMachine(c) {
@@ -277,7 +304,7 @@ export class Drum {
         c.beginPath(); c.arc(cx + Math.cos(th) * rr, cy + Math.sin(th) * rr, 2.6, 0, TAU); c.fill();
       }
     }
-    c.fillStyle = '#4b545e';
+    c.fillStyle = '#5d6772';
     for (let i = 0; i < 3; i++) {
       const th = a + (i / 3) * TAU;
       c.save();
@@ -310,23 +337,12 @@ export class Drum {
       c.globalAlpha = Math.max(0, Math.min(1, ch.life));
       c.translate(cx + ch.x, cy + ch.y);
       c.rotate(ch.rot);
-      c.fillStyle = ch.color;
-      roundRect(c, -ch.w / 2, -ch.h / 2, ch.w, ch.h, 4);
-      c.fill();
-      if (ch.label) {
-        c.fillStyle = ch.color === '#f2b705' ? '#1a1e23' : '#ffffff';
-        c.font = '600 10.5px "Bricolage Grotesque", system-ui, sans-serif';
-        c.textAlign = 'center';
-        c.textBaseline = 'middle';
-        c.fillText(ch.label, 0, 0.5);
-      } else {
-        c.fillStyle = 'rgba(255,255,255,0.55)';
-        c.fillRect(-ch.w / 2 + 4, -1.5, ch.w * 0.45, 3);
-      }
+      drawCloth(c, ch);
       c.restore();
     }
 
-    water(0, 0.75);
+    water(0, 0.3);
+    this.drawJet(c, cx, cy, G);
 
     c.strokeStyle = 'rgba(255,255,255,0.7)';
     c.lineWidth = 1.4;
@@ -353,4 +369,45 @@ function roundRect(c, x, y, w, h, r) {
   c.arcTo(x, y + h, x, y, r);
   c.arcTo(x, y, x + w, y, r);
   c.closePath();
+}
+
+/** Flat laundry: t-shirt, sock or striped towel. */
+function drawCloth(c, ch) {
+  const w = ch.w, h = ch.h;
+  c.fillStyle = ch.color;
+  if (ch.kind === 'shirt') {
+    c.beginPath();
+    c.moveTo(-w * 0.18, -h / 2);
+    c.lineTo(-w * 0.5, -h * 0.3);
+    c.lineTo(-w * 0.38, -h * 0.08);
+    c.lineTo(-w * 0.26, -h * 0.16);
+    c.lineTo(-w * 0.26, h / 2);
+    c.lineTo(w * 0.26, h / 2);
+    c.lineTo(w * 0.26, -h * 0.16);
+    c.lineTo(w * 0.38, -h * 0.08);
+    c.lineTo(w * 0.5, -h * 0.3);
+    c.lineTo(w * 0.18, -h / 2);
+    c.quadraticCurveTo(0, -h * 0.28, -w * 0.18, -h / 2);
+    c.closePath();
+    c.fill();
+  } else if (ch.kind === 'sock') {
+    c.beginPath();
+    c.moveTo(-w / 2, -h / 2);
+    c.lineTo(w / 2, -h / 2);
+    c.lineTo(w / 2, h * 0.18);
+    c.quadraticCurveTo(w / 2, h / 2, w * 0.1, h / 2);
+    c.lineTo(-w * 1.1, h / 2);
+    c.quadraticCurveTo(-w * 1.5, h * 0.3, -w * 1.1, h * 0.12);
+    c.lineTo(-w / 2, h * 0.12);
+    c.closePath();
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.6)';
+    c.fillRect(-w / 2, -h / 2, w, h * 0.16);
+  } else {
+    roundRect(c, -w / 2, -h / 2, w, h, 3);
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.55)';
+    c.fillRect(-w / 2, -h * 0.25, w, h * 0.12);
+    c.fillRect(-w / 2, h * 0.12, w, h * 0.12);
+  }
 }
