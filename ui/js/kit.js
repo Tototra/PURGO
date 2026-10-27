@@ -6,7 +6,26 @@ import { app, h, header, notice, empty, scanning, onProgress, button, itemRow, a
   trashSummary, confirmDialog, categoryList, toast } from './core.js';
 
 export function rerender(m) {
-  if (app.module === m.id) app.mount(m, false);
+  if (app.module !== m.id) return;
+  // a re-render rebuilds the view: keep the field being typed in focused, and lists where they were scrolled
+  const main = document.querySelector('main');
+  const a = document.activeElement;
+  const typing = a && main?.contains(a) && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && a.type !== 'checkbox' && a.type !== 'range'
+    ? { ph: a.placeholder, start: a.selectionStart, end: a.selectionEnd } : null;
+  const scrolled = main ? [...main.querySelectorAll('*')].filter((e) => e.scrollTop > 0).map((e) => [e.className, e.scrollTop]) : [];
+  app.mount(m, false);
+  if (!main) return;
+  for (const [cls, top] of scrolled) {
+    const e = [...main.querySelectorAll('*')].find((x) => x.className === cls && x.scrollHeight > x.clientHeight);
+    if (e) e.scrollTop = top;
+  }
+  if (typing) {
+    const field = [...main.querySelectorAll('input, textarea')].find((x) => x.placeholder === typing.ph);
+    if (field) {
+      field.focus({ preventScroll: true });
+      try { field.setSelectionRange(typing.start, typing.end); } catch {}
+    }
+  }
 }
 
 export function busyLine(text) {

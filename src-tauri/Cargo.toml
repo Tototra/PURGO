@@ -1,6 +1,6 @@
 [package]
 name = "purgo"
-version = "1.0.0"
+version = "1.0.1"
 description = "Purgo — nettoyage, optimisation et outils développeurs pour Windows, Linux et macOS"
 authors = ["Tototra"]
 edition = "2021"
