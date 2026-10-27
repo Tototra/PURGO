@@ -148,7 +148,10 @@ pub fn make_env(u: &Path, conda: bool) -> PyEnv {
     let tool_owned = (top.starts_with('.') && !USER_ENV_DIRS.contains(&top.as_str())) || rel.starts_with("AppData/");
     let parent = u.parent().map(Path::to_path_buf).unwrap_or_default();
     let project = if tool_owned { None } else if kind == "venv" && parent != home() { Some(parent) } else if kind == "tox/nox" { parent.parent().map(Path::to_path_buf) } else { None };
-    let mut dates = vec![atime(&u.join("pyvenv.cfg")), mtime(&u.join(if cfg!(windows) { "Scripts" } else { "bin" }))];
+    // pyvenv.cfg is read by the scan itself, so its access time would always say "today":
+    // use the activation script instead (read when the venv is activated) and the bin folder.
+    let bin = u.join(if cfg!(windows) { "Scripts" } else { "bin" });
+    let mut dates = vec![atime(&bin.join(if cfg!(windows) { "activate.bat" } else { "activate" })), mtime(&bin)];
     dates.extend(sp.iter().map(|s| mtime(s)));
     let name = match &project { Some(p) => format!("{} › {}", file_name(p), file_name(u)), None => file_name(u) };
     PyEnv {

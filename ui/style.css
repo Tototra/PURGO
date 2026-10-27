@@ -223,7 +223,8 @@ input[type=range] { accent-color: var(--tint); }
 /* ---------------------------------------------------------- porthole + display */
 .orb { display: flex; flex-direction: column; align-items: center; gap: 16px; flex: none; }
 .porthole { position: relative; width: var(--size); height: var(--size); border-radius: 50%; transition: transform .35s var(--spring); filter: drop-shadow(0 8px 0 rgba(21, 25, 29, .07)); }
-.orb.clickable .porthole { cursor: pointer; }
+.orb.clickable .porthole, .orb.clickable .display { cursor: pointer; }
+.orb.clickable:not(.machine) .display:hover { background: #20252b; }
 .orb.clickable .porthole:hover { transform: scale(1.025); }
 .orb.clickable .porthole:active { transform: scale(.97); transition-duration: .1s; }
 .drum-canvas { display: block; }

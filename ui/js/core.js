@@ -157,14 +157,15 @@ export const currentTint = () => getComputedStyle(document.documentElement).getP
 export function orb({ phase = 'idle', size = 240, onClick, content, machine = false } = {}) {
   const d = new Drum(size, currentTint(), { machine });
   d.reduce = !!app.settings.reduce_motion;
-  const display = h('div.display');
+  const start = () => { d.pulse(); setTimeout(onClick, 180); };
+  // the LED display reads "Analyser" when idle, so it must start the cycle too
+  const display = h('div.display', { onclick: (e) => { if (machine || !onClick || !el.classList.contains('idle')) return; e.stopPropagation(); start(); } });
   const port = h('div.porthole', {
     onclick: (e) => {
       if (!onClick || !el.classList.contains('idle')) return;
       const r = port.getBoundingClientRect();
       if (!machine && Math.hypot(e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2) > size / 2) return;
-      d.pulse();
-      setTimeout(onClick, 180);
+      start();
     },
     onpointerenter: () => (d.hover = 1),
     onpointerleave: () => (d.hover = 0),
