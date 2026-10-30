@@ -234,6 +234,7 @@ mod win {
 
 // ---------------------------------------------------------------- commands
 
+#[allow(unreachable_code)] // fallback for any target other than macOS, Linux, or Windows
 pub fn list() -> Vec<StartupItem> {
     #[cfg(target_os = "macos")]
     return mac_items();
@@ -241,7 +242,7 @@ pub fn list() -> Vec<StartupItem> {
     return linux_items();
     #[cfg(windows)]
     return win::items();
-    #[allow(unreachable_code)]
+
     vec![]
 }
 

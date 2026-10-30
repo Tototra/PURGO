@@ -64,7 +64,7 @@ impl Category {
         if items.is_empty() {
             return None;
         }
-        items.sort_by(|a, b| b.size.cmp(&a.size));
+        items.sort_by_key(|i| std::cmp::Reverse(i.size));
         Some(Category { id: id.into(), name: name.into(), icon: icon.into(), info: info.into(), items })
     }
 }

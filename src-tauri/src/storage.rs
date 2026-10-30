@@ -61,7 +61,7 @@ pub async fn cloud_scan(app: AppHandle) -> CloudReport {
             let (local, total) = measure(&r);
             folders.push(CloudFolder { path: r.to_string_lossy().into(), name: file_name(&c), local, total });
         }
-        folders.sort_by(|a, b| b.local.cmp(&a.local));
+        folders.sort_by_key(|f| std::cmp::Reverse(f.local));
         CloudReport { name: Some(name.into()), root: Some(root.to_string_lossy().into()), folders }
     }).await.unwrap()
 }
@@ -287,7 +287,7 @@ pub async fn music_scan(app: AppHandle) -> Vec<MusicProject> {
                     sets: children(&fl).len(), size: s, backup: s, backup_path: Some(fl.to_string_lossy().into()), modified: mtime(&fl) });
             }
         }
-        v.sort_by(|a, b| b.modified.cmp(&a.modified));
+        v.sort_by_key(|x| std::cmp::Reverse(x.modified));
         v
     }).await.unwrap_or_default()
 }

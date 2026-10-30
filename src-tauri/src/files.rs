@@ -42,7 +42,7 @@ pub async fn dir_children(path: String) -> Vec<Node> {
             is_dir: is_dir(p) && !is_symlink(p) && ext(p) != "app",
             size: size_of(p),
         }).collect();
-        v.sort_by(|a, b| b.size.cmp(&a.size));
+        v.sort_by_key(|x| std::cmp::Reverse(x.size));
         v
     }).await.unwrap_or_default()
 }
@@ -87,7 +87,7 @@ pub async fn large_files(app: AppHandle, root: String, min_mb: u64) -> Vec<Item>
             it.meta = serde_json::json!({ "kind": kind_of(&ext(p)), "accessed": accessed });
             out.push(it);
         }
-        out.sort_by(|a, b| b.size.cmp(&a.size));
+        out.sort_by_key(|o| std::cmp::Reverse(o.size));
         out
     }).await.unwrap_or_default()
 }
@@ -162,7 +162,7 @@ pub async fn duplicates(app: AppHandle, root: String, min_kb: u64) -> Vec<DupGro
             }
             out
         }).collect();
-        groups.sort_by(|a, b| (b.size * (b.files.len() as u64 - 1)).cmp(&(a.size * (a.files.len() as u64 - 1))));
+        groups.sort_by_key(|g| std::cmp::Reverse(g.size * (g.files.len() as u64 - 1)));
         groups
     }).await.unwrap_or_default()
 }

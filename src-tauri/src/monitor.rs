@@ -181,7 +181,7 @@ pub async fn processes(by_memory: bool) -> Vec<Proc> {
         }
         let mut v: Vec<Proc> = map.into_values().collect();
         if by_memory {
-            v.sort_by(|a, b| b.mem.cmp(&a.mem));
+            v.sort_by_key(|x| std::cmp::Reverse(x.mem));
         } else {
             v.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
         }

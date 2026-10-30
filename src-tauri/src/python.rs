@@ -124,7 +124,7 @@ pub fn packages(env: &Path) -> Vec<PyPackage> {
             out.push(PyPackage { name, version, size });
         }
     }
-    out.sort_by(|a, b| b.size.cmp(&a.size));
+    out.sort_by_key(|o| std::cmp::Reverse(o.size));
     out
 }
 
@@ -199,9 +199,10 @@ pub fn interpreters(envs: &[PyEnv]) -> Vec<PyInterpreter> {
         }
     }
     if cfg!(target_os = "linux") {
+        let py3_minor = regex::Regex::new(r"^python3\.\d+$").unwrap();
         for c in children(&PathBuf::from("/usr/bin")) {
             let n = file_name(&c);
-            if regex::Regex::new(r"^python3\.\d+$").unwrap().is_match(&n) {
+            if py3_minor.is_match(&n) {
                 add(c.clone(), c.clone(), "Système (paquet de la distribution)", false, Some(PathBuf::from("/usr")));
             }
         }

@@ -258,7 +258,7 @@ pub async fn brew_installed() -> Vec<Item> {
             it.meta = serde_json::json!({ "installed": mtime(&p), "cask": true, "name": c });
             v.push(it);
         }
-        v.sort_by(|a, b| b.size.cmp(&a.size));
+        v.sort_by_key(|x| std::cmp::Reverse(x.size));
         v
     }).await.unwrap_or_default()
 }

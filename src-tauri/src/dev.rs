@@ -53,7 +53,7 @@ pub async fn node_scan(app: AppHandle) -> Vec<Item> {
         caches.dedup_by(|a, b| a.0 == b.0);
         out.extend(named_items(caches, true));
         out.retain(|i| i.size > 0);
-        out.sort_by(|a, b| b.size.cmp(&a.size));
+        out.sort_by_key(|o| std::cmp::Reverse(o.size));
         out
     }).await.unwrap_or_default()
 }
@@ -117,7 +117,7 @@ pub async fn git_scan(app: AppHandle) -> Result<Vec<Repo>, String> {
         if which("git").is_none() { return Err("Git n'est pas installé sur cet ordinateur.".to_string()); }
         let skip = home_skips();
         let h = home();
-        let dirs = find_dirs(&[h.clone()], &SKIP_NAMES, &skip, |p| progress(&app, "git", &p.to_string_lossy(), 0), |p| {
+        let dirs = find_dirs(std::slice::from_ref(&h), &SKIP_NAMES, &skip, |p| progress(&app, "git", &p.to_string_lossy(), 0), |p| {
             let rel = p.strip_prefix(&h).map(|r| r.to_string_lossy().to_string()).unwrap_or_default();
             !rel.starts_with('.') && exists(&p.join(".git"))
         });
@@ -129,7 +129,7 @@ pub async fn git_scan(app: AppHandle) -> Result<Vec<Repo>, String> {
             progress(&app, "git", &r.path, total);
             v.push(r);
         }
-        v.sort_by(|a, b| b.size.cmp(&a.size));
+        v.sort_by_key(|x| std::cmp::Reverse(x.size));
         Ok(v)
     }).await.map_err(|e| e.to_string())?
 }
@@ -291,7 +291,7 @@ pub async fn ai_scan(app: AppHandle) -> Vec<Item> {
         for f in children(&gpt4all).into_iter().filter(|f| ext(f) == "gguf" || ext(f) == "bin") { add(&f, file_name(&f), "GPT4All", None); }
         for f in children(&hp(".cache/torch/hub/checkpoints")) { add(&f, file_name(&f), "PyTorch Hub", None); }
         for f in children(&hp(".cache/torch/sentence_transformers")) { add(&f, file_name(&f), "Sentence Transformers", None); }
-        out.sort_by(|a, b| b.size.cmp(&a.size));
+        out.sort_by_key(|o| std::cmp::Reverse(o.size));
         out
     }).await.unwrap_or_default()
 }

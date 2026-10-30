@@ -212,6 +212,7 @@ fn list_linux() -> Vec<App> {
         }
     }
     // Native packages behind the visible .desktop launchers
+    #[allow(clippy::type_complexity)]
     let (pm, query): (&str, fn(&str) -> Option<(String, String, u64)>) = if which("dpkg-query").is_some() {
         ("apt", |p| {
             let (c, o) = run("dpkg", &["-S", p]);
@@ -313,7 +314,7 @@ pub fn list() -> Vec<App> {
     #[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
     let v: Vec<App> = vec![];
     let mut v = v;
-    v.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    v.sort_by_key(|a| a.name.to_lowercase());
     *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = v.clone();
     v
 }
@@ -370,7 +371,7 @@ pub fn leftovers(app: &App) -> Vec<Item> {
             i.selected = false;
         }
     }
-    items.sort_by(|a, b| b.size.cmp(&a.size));
+    items.sort_by_key(|i| std::cmp::Reverse(i.size));
     items
 }
 
@@ -459,7 +460,7 @@ pub async fn app_orphans() -> Vec<Item> {
             }
         }
         let mut items = items_for(v, false);
-        items.sort_by(|a, b| b.size.cmp(&a.size));
+        items.sort_by_key(|i| std::cmp::Reverse(i.size));
         items
     }).await.unwrap_or_default()
 }
